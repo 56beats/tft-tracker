@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { config } from 'dotenv'
-import { fetchTftRankedLp } from './riot'
+import { buildTftLpDashboard } from './tftDashboard'
 
 config({ path: join(process.cwd(), '.env') })
 
@@ -11,10 +11,10 @@ function getApiKey(): string {
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 520,
-    height: 420,
-    minWidth: 400,
-    minHeight: 360,
+    width: 880,
+    height: 820,
+    minWidth: 520,
+    minHeight: 480,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -39,7 +39,7 @@ function createWindow(): void {
 app.whenReady().then(() => {
   ipcMain.handle('tft:getLp', async (_evt, payload: { riotId: string; platform: string }) => {
     try {
-      const result = await fetchTftRankedLp(payload.riotId, payload.platform, getApiKey())
+      const result = await buildTftLpDashboard(payload.riotId, payload.platform, getApiKey())
       return { ok: true as const, data: result }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)

@@ -55,6 +55,27 @@ async function riotFetch<T>(url: string, apiKey: string): Promise<T> {
   return JSON.parse(text) as T
 }
 
+/** 直近 1 試合から tft_set_number を取得（ランクマッチ以外の直近試合のセットが返る場合あり） */
+export async function fetchLatestTftSetNumber(
+  puuid: string,
+  platform: string,
+  apiKey: string
+): Promise<number | null> {
+  const plat = platform.toLowerCase()
+  const idsUrl = `https://${plat}.api.riotgames.com/tft/match/v1/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=0&count=1`
+  try {
+    const ids = await riotFetch<string[]>(idsUrl, apiKey)
+    if (!ids?.length) return null
+    const matchUrl = `https://${plat}.api.riotgames.com/tft/match/v1/matches/${encodeURIComponent(ids[0]!)}`
+    const match = await riotFetch<{ info?: Record<string, unknown> }>(matchUrl, apiKey)
+    const n = match.info?.tft_set_number
+    if (typeof n === 'number' && Number.isFinite(n)) return n
+    return null
+  } catch {
+    return null
+  }
+}
+
 export async function fetchTftRankedLp(
   riotId: string,
   platform: string,
