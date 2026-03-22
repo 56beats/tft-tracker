@@ -1,0 +1,105 @@
+# TFT LP Tracker
+
+Riot API を使って Teamfight Tactics（TFT）のランク戦 LP を表示する、Windows 向けデスクトップアプリです。
+
+## 機能一覧
+
+新しい機能を追加したときは、**下表に行を足して** README を更新してください。
+
+| 機能 | 説明 | 追加日 |
+|------|------|--------|
+| Riot ID で LP 表示 | `ゲーム名#タグ` とリージョンを指定して `RANKED_TFT` のティア・段位・LP を取得 | 初版 |
+| リージョン選択 | JP / KR / NA / EUW など主要プラットフォームに対応 | 初版 |
+| ダーク UI | Chakra UI ベースのシンプルな画面 | 初版 |
+
+### 予定・検討中（任意）
+
+実装したら上の表へ移動し、ここから削除してください。
+
+- （未記入）
+
+---
+
+## 技術スタック
+
+- **Electron** + **electron-vite**
+- **React 18** + **TypeScript**
+- **Chakra UI**
+- **Riot Games API**（Account v1、TFT League v1）
+
+## 必要なもの
+
+- Node.js（推奨: 最新 LTS）
+- [Riot Developer Portal](https://developer.riotgames.com/) で発行した API キー
+
+## セットアップ
+
+```bash
+git clone https://github.com/56beats/tft-tracker.git
+cd tft-tracker
+npm install
+copy .env.example .env   # Windows（PowerShell / CMD）
+# .env に RIOT_API_KEY= を記入
+npm run dev
+```
+
+macOS / Linux の場合は `.env` を手元で作成し、`.env.example` を参考に `RIOT_API_KEY` を設定してください。
+
+## 環境変数
+
+| 変数名 | 必須 | 説明 |
+|--------|------|------|
+| `RIOT_API_KEY` | はい | Riot API の `X-Riot-Token`。**リポジトリにコミットしないこと**（`.gitignore` に `.env` を含む） |
+
+## npm スクリプト
+
+| コマンド | 説明 |
+|----------|------|
+| `npm run dev` | 開発モード（Vite + Electron 起動） |
+| `npm run build` | `out/` へ本番用ビルド |
+| `npm run preview` | ビルド結果のプレビュー |
+
+ビルド後にアプリだけ起動する例（Windows）:
+
+```bash
+npx electron .
+```
+
+## プロジェクト構成（概要）
+
+```
+src/
+  main/          # Electron メインプロセス（Riot API 呼び出し・IPC）
+  preload/       # プリロード（renderer への安全な API 公開）
+  renderer/      # React + Chakra UI
+  shared/        # 型定義など共有コード
+```
+
+API キーはメインプロセスのみで読み込み、レンダラには渡しません。
+
+## Riot API について
+
+- アカウント解決: `riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}`（ルーティングリージョン）
+- TFT ランク: `tft/league/v1/by-puuid/{puuid}`（プラットフォームリージョン）
+
+レート制限やキーの種類（開発用キーなど）の制約は、[公式ドキュメント](https://developer.riotgames.com/docs/portal) に従ってください。
+
+## ライセンス
+
+MIT（`package.json` に準拠）
+
+---
+
+## メンテナ向け：README の更新ルール
+
+機能追加・仕様変更をマージするときは、次を更新してください。
+
+1. **機能一覧**の表に、新機能の行を追加する（または説明を修正する）。
+2. 大きな変更があれば **更新履歴** に 1 行追記する。
+3. セットアップや環境変数が変わったら、該当セクションを直す。
+
+## 更新履歴
+
+| 日付 | 内容 |
+|------|------|
+| 2026-03-22 | 初版 README 作成 |
