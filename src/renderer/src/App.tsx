@@ -18,7 +18,7 @@ import {
   Tr,
   VStack
 } from '@chakra-ui/react'
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -28,7 +28,13 @@ import {
   XAxis,
   YAxis
 } from 'recharts'
-import type { LpHistoryPointDto, TftGetLpResult, TftLeagueEntryDto, TftLpPayload } from '../../shared/types'
+import type {
+  LpHistoryPointDto,
+  RankedPlacementPointDto,
+  TftGetLpResult,
+  TftLeagueEntryDto,
+  TftLpPayload
+} from '../../shared/types'
 
 const REGIONS = [
   { value: 'jp1', label: '日本 (JP1)' },
@@ -85,8 +91,54 @@ function LpChartTooltip({
   )
 }
 
+type PlacementChartRow = RankedPlacementPointDto & { idx: number; tick: string }
+
+function buildPlacementRows(points: RankedPlacementPointDto[]): PlacementChartRow[] {
+  return points.map((p, idx) => ({
+    ...p,
+    idx,
+    tick: new Date(p.at).toLocaleString('ja-JP', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }))
+}
+
+function PlacementChartTooltip({
+  active,
+  payload
+}: {
+  active?: boolean
+  payload?: Array<{ payload: PlacementChartRow }>
+}) {
+  if (!active || !payload?.[0]) return null
+  const p = payload[0].payload
+  return (
+    <Box bg="gray.700" borderWidth="1px" borderColor="whiteAlpha.300" borderRadius="md" px={3} py={2} fontSize="sm">
+      <Text color="gray.300">{new Date(p.at).toLocaleString('ja-JP')}</Text>
+      <Text fontWeight="medium">順位: {p.placement} 位</Text>
+      {p.setNumber != null && (
+        <Text fontSize="xs" color="gray.400">
+          Set {p.setNumber}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
 function DashboardPanel({ data }: { data: TftLpPayload }) {
   const chartData = buildChartRows(data.currentSetLpHistory)
+  const placementFiltered = useMemo(() => {
+    const src = data.rankedPlacementsSinceDec2025
+    if (data.currentSetNumber != null) {
+      return src.filter((p) => p.setNumber === data.currentSetNumber)
+    }
+    return src
+  }, [data.rankedPlacementsSinceDec2025, data.currentSetNumber])
+  const placementChartData = buildPlacementRows(placementFiltered)
+
   return (
     <VStack align="stretch" spacing={4}>
       <Box>
@@ -107,6 +159,22 @@ function DashboardPanel({ data }: { data: TftLpPayload }) {
             ランク戦の記録がありません（アンランク）。
           </Text>
         )}
+        <Text fontSize="xs" color="gray.500" mt={3}>
+          試合履歴同期（2025/12/1 UTC〜）: マッチ詳細 {data.matchBackfill.matchesFetched} 件取得 / 対象ランク戦{' '}
+          {data.matchBackfill.rankedMatchesInRange} 件 / placement 追記 {data.matchBackfill.placementPointsStored} 件
+          {data.matchBackfill.lpPointsMergedFromMatches > 0
+            ? ` / 試合JSONからLP取り込み ${data.matchBackfill.lpPointsMergedFromMatches} 件`
+            : ''}
+        </Text>
+        {data.matchBackfill.note ? (
+          <Text
+            fontSize="xs"
+            color={data.matchBackfill.note.includes('スキップ') ? 'gray.500' : 'orange.300'}
+            mt={1}
+          >
+            {data.matchBackfill.note}
+          </Text>
+        ) : null}
       </Box>
 
       <Divider borderColor="whiteAlpha.300" />
@@ -175,7 +243,7 @@ function DashboardPanel({ data }: { data: TftLpPayload }) {
         </Text>
         {data.currentSetNumber != null ? (
           <Text fontSize="xs" color="gray.500" mb={2}>
-            Set {data.currentSetNumber} の記録（縦軸は API の leaguePoints。昇段・降段でリセットされます）
+            Set {data.currentSetNumber} の記録（端末保存・試合から取り込めた点を含む。縦軸は leaguePoints で、昇段・降段でリセットされます）
           </Text>
         ) : (
           <Text fontSize="xs" color="gray.500" mb={2}>
@@ -200,6 +268,50 @@ function DashboardPanel({ data }: { data: TftLpPayload }) {
                 <YAxis stroke="#a0aec0" fontSize={11} width={40} domain={['auto', 'auto']} />
                 <Tooltip content={<LpChartTooltip />} />
                 <Line type="monotone" dataKey="lp" stroke="#63b3ed" strokeWidth={2} dot={{ r: 3, fill: '#63b3ed' }} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Box>
+        )}
+      </Box>
+
+      <Divider borderColor="whiteAlpha.300" />
+
+      <Box>
+        <Text fontSize="sm" fontWeight="semibold" mb={2}>
+          ランク戦の順位推移（2025/12/1 UTC 以降・試合データ）
+        </Text>
+        <Text fontSize="xs" color="gray.500" mb={2}>
+          Riot の試合 JSON には各試合終了時の LP が含まれないため、過去の真の LP 曲線はここでは描けません。代わりにランク戦（queue 1100）の
+          <Text as="span" fontWeight="semibold">
+            順位（1〜8）
+          </Text>
+          を試合時刻でプロットします（上が良い）。現在セットが分かるときはそのセットの試合のみ表示します。
+        </Text>
+        {placementChartData.length < 2 ? (
+          <Text fontSize="sm" color="gray.500">
+            対象のランク戦が 2 件未満です。期間内にランクを回すとグラフが表示されます。
+          </Text>
+        ) : (
+          <Box h="260px" w="100%">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={placementChartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
+                <XAxis
+                  dataKey="idx"
+                  tickFormatter={(v) => placementChartData[typeof v === 'number' ? v : Number(v)]?.tick ?? ''}
+                  stroke="#a0aec0"
+                  fontSize={11}
+                />
+                <YAxis stroke="#a0aec0" fontSize={11} width={36} domain={[8, 1]} allowDecimals={false} />
+                <Tooltip content={<PlacementChartTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="placement"
+                  stroke="#68d391"
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: '#68d391' }}
+                  isAnimationActive={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </Box>

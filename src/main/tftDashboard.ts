@@ -1,6 +1,14 @@
-import type { LpHistoryPointDto, SetLpSummaryDto, TftLeagueEntryDto, TftLpPayload } from '../shared/types'
+import type {
+  LpHistoryPointDto,
+  MatchBackfillStatsDto,
+  RankedPlacementPointDto,
+  SetLpSummaryDto,
+  TftLeagueEntryDto,
+  TftLpPayload
+} from '../shared/types'
 import {
   appendSnapshotToStore,
+  getPlacementsForPlayer,
   getSetSnapshots,
   listSetKeysForPlayer,
   loadHistoryFile,
@@ -10,6 +18,7 @@ import {
   sortSetKeysDesc,
   type LpSnapshot
 } from './lpHistoryStore'
+import { BACKFILL_SINCE_MS, syncMatchesSinceDec2025, type MatchBackfillStats } from './matchBackfill'
 import { fetchLatestTftSetNumber, fetchTftRankedLp } from './riot'
 
 function buildChartPoints(snaps: LpSnapshot[], live: TftLeagueEntryDto | null): LpHistoryPointDto[] {
@@ -37,6 +46,16 @@ function buildChartPoints(snaps: LpSnapshot[], live: TftLeagueEntryDto | null): 
   return out
 }
 
+function toBackfillDto(stats: MatchBackfillStats): MatchBackfillStatsDto {
+  return {
+    matchesFetched: stats.matchesFetched,
+    rankedMatchesInRange: stats.rankedMatchesInRange,
+    placementPointsStored: stats.placementPointsStored,
+    lpPointsMergedFromMatches: stats.lpPointsMergedFromMatches,
+    note: stats.note
+  }
+}
+
 export async function buildTftLpDashboard(
   riotId: string,
   platform: string,
@@ -45,10 +64,12 @@ export async function buildTftLpDashboard(
   const base = await fetchTftRankedLp(riotId, platform, apiKey)
   const plat = platform.toLowerCase()
   const playerKey = playerStorageKey(plat, base.puuid)
-  const setNumber = await fetchLatestTftSetNumber(base.puuid, plat, apiKey)
-  const activeSetKey = setStorageKey(setNumber)
 
   let file = await loadHistoryFile()
+  const bfStats = await syncMatchesSinceDec2025(base.puuid, plat, apiKey, file, playerKey)
+
+  const setNumber = await fetchLatestTftSetNumber(base.puuid, plat, apiKey)
+  const activeSetKey = setStorageKey(setNumber)
 
   if (base.entry) {
     const snap: LpSnapshot = {
@@ -60,8 +81,9 @@ export async function buildTftLpDashboard(
       losses: base.entry.losses ?? null
     }
     file = appendSnapshotToStore(file, playerKey, activeSetKey, snap)
-    await saveHistoryFile(file)
   }
+
+  await saveHistoryFile(file)
 
   const keys = sortSetKeysDesc(listSetKeysForPlayer(file, playerKey)).filter(
     (key) => getSetSnapshots(file, playerKey, key).length > 0
@@ -103,6 +125,16 @@ export async function buildTftLpDashboard(
   const chartSnaps = getSetSnapshots(file, playerKey, activeSetKey)
   const currentSetLpHistory = buildChartPoints(chartSnaps, base.entry)
 
+  const placementsRaw = getPlacementsForPlayer(file, playerKey).filter(
+    (r) => new Date(r.at).getTime() >= BACKFILL_SINCE_MS
+  )
+  const rankedPlacementsSinceDec2025: RankedPlacementPointDto[] = placementsRaw.map((r) => ({
+    at: r.at,
+    placement: r.placement,
+    setNumber: r.setNumber,
+    matchId: r.matchId
+  }))
+
   return {
     gameName: base.gameName,
     tagLine: base.tagLine,
@@ -111,6 +143,8 @@ export async function buildTftLpDashboard(
     entry: base.entry,
     currentSetNumber: setNumber,
     setSummaries,
-    currentSetLpHistory
+    currentSetLpHistory,
+    matchBackfill: toBackfillDto(bfStats),
+    rankedPlacementsSinceDec2025
   }
 }

@@ -37,7 +37,7 @@ function parseRiotId(riotId: string): { gameName: string; tagLine: string } {
   }
 }
 
-async function riotFetch<T>(url: string, apiKey: string): Promise<T> {
+export async function riotFetch<T>(url: string, apiKey: string): Promise<T> {
   const res = await fetch(url, {
     headers: { 'X-Riot-Token': apiKey }
   })

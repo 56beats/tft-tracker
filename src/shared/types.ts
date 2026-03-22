@@ -26,6 +26,21 @@ export type SetLpSummaryDto = {
   isCurrentSet: boolean
 }
 
+export type MatchBackfillStatsDto = {
+  matchesFetched: number
+  rankedMatchesInRange: number
+  placementPointsStored: number
+  lpPointsMergedFromMatches: number
+  note: string | null
+}
+
+export type RankedPlacementPointDto = {
+  at: string
+  placement: number
+  setNumber: number | null
+  matchId: string
+}
+
 export type TftLpPayload = {
   gameName: string
   tagLine: string
@@ -35,6 +50,8 @@ export type TftLpPayload = {
   currentSetNumber: number | null
   setSummaries: SetLpSummaryDto[]
   currentSetLpHistory: LpHistoryPointDto[]
+  matchBackfill: MatchBackfillStatsDto
+  rankedPlacementsSinceDec2025: RankedPlacementPointDto[]
 }
 
 export type TftGetLpResult =

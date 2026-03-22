@@ -13,27 +13,59 @@ export type LpSnapshot = {
 
 type SetBucket = { snapshots: LpSnapshot[] }
 
+export type RankedPlacementRow = {
+  at: string
+  placement: number
+  setNumber: number | null
+  matchId: string
+  queueId: number
+}
+
+/** v2: sets のほか、試合由来の placement 履歴を保持 */
+export type PlayerHistory = {
+  sets: Record<string, SetBucket>
+  rankedPlacements?: RankedPlacementRow[]
+  /** 直近の試合バックフィル完了時刻（短時間での API 浪費を防ぐ） */
+  lastMatchSyncAt?: string
+}
+
 export type LpHistoryFile = {
-  v: 1
-  players: Record<string, Record<string, SetBucket>>
+  v: 2
+  players: Record<string, PlayerHistory>
 }
 
 function storePath(): string {
   return join(app.getPath('userData'), 'tft-lp-history.json')
 }
 
+type LegacyV1 = { v: 1; players: Record<string, Record<string, SetBucket>> }
+
+function migrate(raw: unknown): LpHistoryFile {
+  if (raw && typeof raw === 'object') {
+    const o = raw as { v?: number; players?: unknown }
+    if (o.v === 2 && o.players && typeof o.players === 'object') {
+      return raw as LpHistoryFile
+    }
+    if (o.v === 1 && o.players && typeof o.players === 'object') {
+      const p1 = o.players as LegacyV1['players']
+      const players: Record<string, PlayerHistory> = {}
+      for (const [pk, sets] of Object.entries(p1)) {
+        players[pk] = { sets: { ...sets }, rankedPlacements: [] }
+      }
+      return { v: 2, players }
+    }
+  }
+  return { v: 2, players: {} }
+}
+
 export async function loadHistoryFile(): Promise<LpHistoryFile> {
   const path = storePath()
   try {
     const raw = await readFile(path, 'utf-8')
-    const parsed = JSON.parse(raw) as LpHistoryFile
-    if (parsed?.v === 1 && parsed.players && typeof parsed.players === 'object') {
-      return parsed
-    }
+    return migrate(JSON.parse(raw))
   } catch {
-    /* 新規 */
+    return { v: 2, players: {} }
   }
-  return { v: 1, players: {} }
 }
 
 export async function saveHistoryFile(data: LpHistoryFile): Promise<void> {
@@ -50,6 +82,15 @@ export function setStorageKey(setNumber: number | null): string {
   return setNumber != null ? String(setNumber) : 'unknown'
 }
 
+export function ensurePlayer(data: LpHistoryFile, playerKey: string): PlayerHistory {
+  if (!data.players[playerKey]) {
+    data.players[playerKey] = { sets: {}, rankedPlacements: [] }
+  }
+  const p = data.players[playerKey]
+  if (!p.rankedPlacements) p.rankedPlacements = []
+  return p
+}
+
 export function shouldAppendSnapshot(prev: LpSnapshot | undefined, next: LpSnapshot): boolean {
   if (!prev) return true
   if (prev.lp !== next.lp || prev.tier !== next.tier || prev.rank !== next.rank) return true
@@ -63,9 +104,9 @@ export function appendSnapshotToStore(
   setKey: string,
   snap: LpSnapshot
 ): LpHistoryFile {
-  if (!data.players[playerKey]) data.players[playerKey] = {}
-  if (!data.players[playerKey][setKey]) data.players[playerKey][setKey] = { snapshots: [] }
-  const list = data.players[playerKey][setKey].snapshots
+  const player = ensurePlayer(data, playerKey)
+  if (!player.sets[setKey]) player.sets[setKey] = { snapshots: [] }
+  const list = player.sets[setKey].snapshots
   const last = list[list.length - 1]
   if (shouldAppendSnapshot(last, snap)) {
     list.push(snap)
@@ -78,11 +119,11 @@ export function getSetSnapshots(
   playerKey: string,
   setKey: string
 ): LpSnapshot[] {
-  return data.players[playerKey]?.[setKey]?.snapshots ?? []
+  return data.players[playerKey]?.sets?.[setKey]?.snapshots ?? []
 }
 
 export function listSetKeysForPlayer(data: LpHistoryFile, playerKey: string): string[] {
-  const sets = data.players[playerKey]
+  const sets = data.players[playerKey]?.sets
   if (!sets) return []
   return Object.keys(sets)
 }
@@ -94,4 +135,8 @@ export function sortSetKeysDesc(keys: string[]): string[] {
     return Number.isNaN(n) ? Number.NEGATIVE_INFINITY : n
   }
   return [...keys].sort((a, b) => rank(b) - rank(a))
+}
+
+export function getPlacementsForPlayer(data: LpHistoryFile, playerKey: string): RankedPlacementRow[] {
+  return data.players[playerKey]?.rankedPlacements ?? []
 }
